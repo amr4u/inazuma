@@ -1,52 +1,105 @@
-name: Publish Firefox test release
+name: Sign and publish Firefox prototype
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/release.yml
-      - .github/RELEASE_NOTES.md
-      - src/profile/crypto.ts
+    inputs:
+      target_commit:
+        description: Full 40-character main commit SHA (must equal the selected workflow commit)
+        required: true
+        type: string
+      tag:
+        description: Exact manifest-version tag (v0.1.0; never reuse the historical alpha release)
+        required: true
+        default: v0.1.0
+        type: string
 permissions:
-  contents: write
+  contents: read
+concurrency:
+  group: firefox-unlisted-release
+  cancel-in-progress: false
 jobs:
   release:
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
-      - name: Check out source
+      - name: Check out exact workflow commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate explicit commit, tag and manifest identity
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/firefox-release.py context --commit "$TARGET_COMMIT" --tag "$RELEASE_TAG"
+      - name: Refuse an existing GitHub release before signing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags.txt"
+          if grep -Fxq -- "$RELEASE_TAG" "$RUNNER_TEMP/release-tags.txt"; then
+            echo 'Release already exists; refusing to replace assets.' >&2
+            exit 1
+          fi
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      - name: Install build dependencies
-        run: npm install --no-audit --no-fund
+          node-version: '22.23.5'
+          cache: npm
+      - name: Install locked build and signing tools
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Test and build Firefox MV2 package
         run: npm test
-      - name: Package unsigned development build
+      - name: Lint self-hosted Firefox package
+        run: npx --no-install web-ext lint --self-hosted --source-dir dist-firefox-offline --warnings-as-errors
+      - name: Prepare reviewable source and unpacked archives
+        run: python3 scripts/firefox-release.py prepare
+      - name: Sign unlisted with Mozilla
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.FIREFOX_AMO_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.FIREFOX_AMO_API_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release
-          cd dist-firefox-offline
-          zip -q -r ../release/inazuma-v0.1.0-alpha.1-unsigned.xpi .
-          zip -q -r ../release/inazuma-v0.1.0-alpha.1-unpacked.zip .
-          cd ..
-          unzip -p release/inazuma-v0.1.0-alpha.1-unsigned.xpi manifest.json >/dev/null
-          (cd release && sha256sum *.xpi *.zip > SHA256SUMS.txt)
-      - name: Create or update GitHub pre-release
+          if [[ -z "${WEB_EXT_API_KEY:-}" || -z "${WEB_EXT_API_SECRET:-}" ]]; then
+            echo 'Missing FIREFOX_AMO_API_KEY or FIREFOX_AMO_API_SECRET repository secret.' >&2
+            exit 1
+          fi
+          cp -R dist-firefox-offline signing-input
+          npx --no-install web-ext sign --channel unlisted --no-config-discovery --no-input \
+            --approval-timeout 900000 \
+            --source-dir signing-input --artifacts-dir signed-artifacts \
+            --upload-source-code release/inazuma-v0.1.0-source.zip \
+            --amo-metadata .github/amo-metadata.json
+      - name: Verify signed payload, identity and checksums
+        run: python3 scripts/firefox-release.py verify --signed-dir signed-artifacts
+      - name: Preserve verified artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: inazuma-signed-release
+          path: release/*
+          if-no-files-found: error
+      - name: Create new GitHub prototype pre-release (never overwrite)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          TARGET_COMMIT: ${{ inputs.target_commit }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="v0.1.0-alpha.1"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" release/* --clobber
-          else
-            gh release create "$tag" release/* \
-              --target "$GITHUB_SHA" \
-              --title "v0.1.0-alpha.1 — Firefox development preview" \
-              --notes-file .github/RELEASE_NOTES.md \
-              --prerelease --latest=false
-          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" -f sha="$TARGET_COMMIT" >/dev/null
+          actual_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')"
+          [[ "$actual_commit" == "$TARGET_COMMIT" ]] || { echo 'Tag target mismatch.' >&2; exit 1; }
+          gh release create "$RELEASE_TAG" release/* --verify-tag \
+            --target "$TARGET_COMMIT" \
+            --title "$RELEASE_TAG — Mozilla-signed Firefox prototype" \
+            --notes-file .github/RELEASE_NOTES.md \
+            --prerelease --latest=false
+          gh release view "$RELEASE_TAG" --json tagName,targetCommitish,isPrerelease,assets

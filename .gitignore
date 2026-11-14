@@ -3,6 +3,11 @@ node_modules/
 .output/
 dist-firefox-offline/
 .test-dist/
+release/
+signing-input/
+signed-artifacts/
+__pycache__/
+*.pyc
 *.xpi
 *.zip
 .DS_Store

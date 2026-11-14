@@ -12,7 +12,9 @@
     "typecheck:core": "tsc -p tsconfig.test.json --noEmit"
   },
   "devDependencies": {
+    "js-yaml": "4.3.2",
     "typescript": "^5.8.3",
+    "web-ext": "10.5.0",
     "wxt": "^0.21.4"
   }
 }
