@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts", "entrypoints/popup/**/*.ts", "entrypoints/options/**/*.ts"],
+  "exclude": ["entrypoints/background.ts", "entrypoints/content.ts", "wxt.config.ts"]
+}

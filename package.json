@@ -1,0 +1,18 @@
+{
+  "name": "decision-formfill-firefox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Decision-driven Firefox autofill extension (Desktop and Android)",
+  "scripts": {
+    "build": "wxt build -b firefox --mv2",
+    "dev": "wxt -b firefox --mv2",
+    "zip": "wxt zip -b firefox --mv2",
+    "build:offline": "node scripts/build-offline.cjs",
+    "test": "tsc -p tsconfig.test.json && node scripts/build-offline.cjs && node --test tests/*.test.cjs",
+    "typecheck:core": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "wxt": "^0.21.4"
+  }
+}

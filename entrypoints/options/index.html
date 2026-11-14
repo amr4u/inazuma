@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Decision Formfill 設定</title>
+  <link rel="stylesheet" href="../../src/app/style.css" />
+</head>
+<body class="options">
+  <header><strong>Decision Formfill</strong><span class="small">設定 / Profiles</span></header>
+  <p class="subhead">僅支援 Firefox，Profile 資料加密後保存在本機。按下智慧填寫時，頁面欄位描述與網址資訊會傳送給 Cloudflare Decision API；Profile 值不由本程式傳送。</p>
+  <div id="message" role="status" class="status"></div>
+  <section id="create-vault" hidden class="panel">
+    <h2>建立加密資料庫</h2>
+    <label>設定主密碼（至少 10 字元）<input id="new-password" type="password" autocomplete="new-password" /></label>
+    <label>確認主密碼<input id="confirm-password" type="password" autocomplete="new-password" /></label>
+    <p class="help">忘記密碼且沒有備份時，資料將無法復原。</p>
+    <button id="create" type="button" class="primary">建立加密資料庫</button>
+  </section>
+  <section id="unlock-vault" hidden class="panel">
+    <h2>解鎖資料庫</h2>
+    <label>密碼<input id="password" type="password" autocomplete="off" /></label>
+    <button id="unlock" type="button" class="primary">解鎖</button>
+  </section>
+  <section id="import-panel" class="panel">
+    <h2>匯入加密備份</h2>
+    <label>選擇先前匯出的加密 JSON<input id="import-file" type="file" accept=".json,application/json" /></label>
+    <label>備份密碼<input id="import-password" type="password" autocomplete="off" /></label>
+    <button id="import-vault" type="button">匯入備份</button>
+    <p class="help">匯入會取代此瀏覽器的整個 Profile Vault（包含 API 設定），請先備份原始資料。</p>
+  </section>
+  <main id="settings" hidden>
+    <section class="panel">
+      <div class="heading-row"><h2>Decision API</h2><span class="small">Cloudflare Clef-omni</span></div>
+      <label>Account ID<input id="account-id" type="text" autocapitalize="off" /></label>
+      <label>API Token（留空表示維持原設定）<input id="api-token" type="password" autocomplete="new-password" /></label>
+      <div class="button-row"><button id="save-provider" type="button">儲存 API 設定</button><span id="provider-status" class="small"></span></div>
+    </section>
+    <section class="panel">
+      <div class="heading-row"><h2>Profiles</h2><button id="new-profile" type="button">新增 Profile</button></div>
+      <label>編輯 Profile<select id="profile-picker"></select></label>
+      <label>名稱<input id="profile-name" type="text" placeholder="例如：個人資料" /></label>
+      <h3>資料欄位</h3>
+      <div id="field-list"></div>
+      <button id="add-field" type="button">＋ 新增欄位</button>
+      <div class="button-row"><button id="save-profile" type="button" class="primary">儲存 Profile</button><button id="delete-profile" type="button" class="danger">刪除</button></div>
+    </section>
+    <section class="panel"><div class="button-row"><button id="export-vault" type="button">下載加密備份</button><button id="lock" type="button">鎖定資料庫</button></div></section>
+  </main>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
