@@ -8,6 +8,13 @@ export interface KdfConfig {
 export const DEFAULT_KDF_ITERATIONS = 310_000; // Benchmark on Firefox Android before release.
 const encoder = new TextEncoder();
 
+/** Copy into an ArrayBuffer accepted by current Web Crypto BufferSource typings. */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
 export function base64(bytes: Uint8Array): string {
   let output = '';
   // Avoid argument-limit failures when encrypting a larger vault.
@@ -34,23 +41,23 @@ export async function passwordKey(password: string, kdf: KdfConfig): Promise<Cry
   if (kdf.algorithm !== 'PBKDF2-SHA256' || kdf.iterations < 1000 || kdf.iterations > 10_000_000) {
     throw new Error('不支援的密碼衍生參數');
   }
-  const passwordMaterial = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', iterations: kdf.iterations, salt: unbase64(kdf.salt) },
+  const passwordMaterial = await crypto.subtle.importKey('raw', toArrayBuffer(encoder.encode(password)), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', iterations: kdf.iterations, salt: toArrayBuffer(unbase64(kdf.salt)) },
     passwordMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
 export async function importDataKey(raw: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  return crypto.subtle.importKey('raw', toArrayBuffer(raw), 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 
 export async function seal(key: CryptoKey, plain: Uint8Array, aad: string): Promise<SealedBlob> {
   const iv = randomBytes(12);
-  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(aad) }, key, plain);
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: toArrayBuffer(iv), additionalData: toArrayBuffer(encoder.encode(aad)) }, key, toArrayBuffer(plain));
   return { iv: base64(iv), ciphertext: base64(new Uint8Array(encrypted)) };
 }
 
 export async function open(key: CryptoKey, blob: SealedBlob, aad: string): Promise<Uint8Array> {
-  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unbase64(blob.iv), additionalData: encoder.encode(aad) }, key, unbase64(blob.ciphertext));
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: toArrayBuffer(unbase64(blob.iv)), additionalData: toArrayBuffer(encoder.encode(aad)) }, key, toArrayBuffer(unbase64(blob.ciphertext)));
   return new Uint8Array(decrypted);
 }
 
