@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/release.yml
       - .github/RELEASE_NOTES.md
+      - src/profile/crypto.ts
 permissions:
   contents: write
 jobs:
