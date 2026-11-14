@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/release.yml
+      - .github/RELEASE_NOTES.md
 permissions:
   contents: write
 jobs:
