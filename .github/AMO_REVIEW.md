@@ -1,7 +1,7 @@
 # Mozilla source review / reproducible prototype build
 
-This source archive corresponds to Decision Formfill `0.1.0`, ID
-`decision-formfill@local.example`. It contains TypeScript and the small custom
+This source archive corresponds to the Decision Formfill version in its
+`package.json` and the matching release tag, ID `decision-formfill@local.example`. It contains TypeScript and the small custom
 CommonJS bundler in `scripts/build-offline.cjs`. The code is not obfuscated and no
 third-party runtime JavaScript is bundled. This signing pipeline intentionally
 uses the existing offline packager, **not WXT**; WXT remains a development option.

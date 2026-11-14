@@ -17,26 +17,9 @@ ${code.split('\n').map(line => '    ' + line).join('\n')}
   assert.equal(result.status, 0, result.stdout + result.stderr);
 }
 
-test('release context binds full commit and fresh exact manifest-version tag', () => {
-  pythonCheck(`
-subprocess.run(['git', 'init', '-q', str(root)], check=True)
-(root / 'package.json').write_text(json.dumps({'version':'0.1.0'}))
-(root / 'wxt.config.ts').write_text("version:'0.1.0', id:'decision-formfill@local.example'")
-(root / 'scripts').mkdir()
-(root / 'scripts/build-offline.cjs').write_text("version:'0.1.0', id:'decision-formfill@local.example'")
-subprocess.run(['git', '-C', str(root), 'add', '.'], check=True)
-subprocess.run(['git', '-C', str(root), '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], check=True)
-sha = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
-m.validate_context(root, sha, 'v0.1.0', sha)
-for commit, tag, event_sha in [(sha[:8], 'v0.1.0', sha), ('0'*40, 'v0.1.0', sha), (sha, 'v0.1.0-alpha.1', sha), (sha, 'v0.1.0', '0'*40)]:
-    try: m.validate_context(root, commit, tag, event_sha)
-    except ValueError: pass
-    else: raise AssertionError('unsafe context accepted')
-subprocess.run(['git', '-C', str(root), 'tag', 'v0.1.0'], check=True)
-try: m.validate_context(root, sha, 'v0.1.0', sha)
-except ValueError as error: assert 'already exists' in str(error)
-else: raise AssertionError('existing tag accepted')
-`);
+test('published-release helpers exercise real git, archives and offline GitHub API boundaries', () => {
+  const result = spawnSync('python3', [path.join(root, 'tests/test_release_published.py'), '-v'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
 test('source archive includes rebuild inputs but excludes secrets, git and dependencies', () => {
@@ -50,6 +33,11 @@ for name, content in files.items():
 (root / 'package-lock.json').write_text(json.dumps({'packages':{'node_modules/typescript':{'version':'5.9.3'}, 'node_modules/web-ext':{'version':'10.5.0'}, 'node_modules/wxt':{'version':'0.21.5'}}}))
 (root / 'dist-firefox-offline').mkdir()
 (root / 'dist-firefox-offline/manifest.json').write_text(json.dumps({'version':'0.1.0','browser_specific_settings':{'gecko':{'id':m.ADDON_ID}}}))
+(root / 'wxt.config.ts').write_text("version:'0.1.0', id:'decision-formfill@local.example'")
+(root / 'scripts/build-offline.cjs').write_text("version:'0.1.0', id:'decision-formfill@local.example'")
+subprocess.run(['git', '-C', str(root), 'add', '.'], check=True)
+subprocess.run(['git', '-C', str(root), '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], check=True)
+subprocess.run(['git', '-C', str(root), 'tag', 'v0.1.0'], check=True)
 m.prepare(root)
 with zipfile.ZipFile(root / 'release/inazuma-v0.1.0-source.zip') as archive:
     names = set(archive.namelist())

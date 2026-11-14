@@ -46,23 +46,32 @@ npm run build:offline      # 無 npm 網路時，用 TypeScript 打包到 dist-f
 
 ## Mozilla unlisted 簽署與 GitHub 原型 release
 
-這是**手動**工作流程，不會在 push main、PR 或建立 tag 時自動簽署；本機建置也不會使用 AMO 憑證。
+這個流程只在 GitHub Release **published** 時自動簽署，支援 stable 與 prerelease（包含從 draft 發布），不會因 push、tag push、draft、編輯 release 或上傳資產而觸發；本機建置不使用 AMO 憑證。
 
-1. 維護者在 Mozilla 帳戶取得 AMO API key/secret，並在 GitHub repository 的 Actions secrets 設定 **`FIREFOX_AMO_API_KEY`**、**`FIREFOX_AMO_API_SECRET`**。不要把值放進程式、指令參數、log 或 source ZIP。
-2. 將審核過的工作流程與 lockfile 放在 `main`。在 GitHub Actions 選 **Sign and publish Firefox prototype** → **Run workflow**，branch 選 `main`。`target_commit` 必須是所選 main 工作流程 commit 的完整 40 字元 SHA；`tag` 填 **`v0.1.0`**。
-3. 工作流程確認 SHA、manifest/package 版本 `0.1.0` 與 add-on ID **`decision-formfill@local.example`**；任何既有同名 tag/release 都會中止。歷史 **`v0.1.0-alpha.1` 不會移動、重用或覆寫**。
-4. 依 lockfile 安裝、執行離線測試/建置及 self-hosted lint，產生 source-review ZIP 與 unpacked ZIP。source ZIP 包含 TypeScript、打包器、lockfile、[Mozilla 審核建置說明](.github/AMO_REVIEW.md) 和 `BUILD_INFO.json` 的實際 OS/精確工具版本；不包含 `.git`、`node_modules`、環境檔或憑證檔。
-5. 僅簽署步驟將 secrets 映射到 `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` 環境變數，使用 `web-ext sign --channel unlisted --upload-source-code ...` 並提供 reviewer notes。缺憑證、驗證/簽署失敗或 15 分鐘內未取得核准/下載都會中止，不發布 unsigned 替代品。若 Mozilla 已接受版本但還在人工審核，先處理該 AMO submission，**不要盲目重新送同版本**；此流程不自動復原既有 submission。
-6. 取得 XPI 後，檢查 Mozilla signature markers、完整 payload 與已測試建置的逐檔位元組一致、ID/版本，計算 SHA-256，才原子建立新的 `v0.1.0` tag 並讀回核對 commit，再建立 GitHub **prerelease**（`latest=false`），不覆寫資產。若最後發布步驟失敗，先檢查已保存的 Actions artifact 與 tag/AMO 狀態，由維護者恢復；不要重新簽署或移動既有 tag。
+1. Repository 需已有 **`FIREFOX_AMO_API_KEY`**、**`FIREFOX_AMO_API_SECRET`** Actions secrets；只有簽署步驟將它們映射到 `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` 環境變數，不放進參數、log 或 source ZIP。
+2. 將審核過的工作流程與 helper 放在 default branch（`main`），再從一般 GitHub UI 或使用者的 `gh` 發布 Release。tag 必須精確等於 `v<package.json version>`，且兩份 manifest 設定的版本和 add-on ID **`decision-formfill@local.example`** 必須一致。Prerelease 是 GitHub Release 的狀態，不是額外加在 manifest-version tag 上的後綴；歷史 `v0.1.0-alpha.1` 不會重用或移動。
+3. Trusted automation 獨立 checkout default branch；打包原始碼則 checkout **release tag 解析後的精確 commit**，不是 main。依 lockfile 安裝、測試/建置、self-hosted lint，產生 source-review 與 unpacked ZIP。Source ZIP 僅取該 commit 的 allowlisted Git blobs，包含 lockfile、[審核說明](.github/AMO_REVIEW.md) 和實際工具/OS/commit 的 `BUILD_INFO.json`；不含 automation checkout、未追蹤檔、`.git`、依賴或憑證。
+4. 使用 unlisted channel，向 Mozilla 提交同一次建置的 source ZIP 與 reviewer notes。驗證返回 XPI 的 signature markers、ID/版本及與已測試 payload 逐檔位元組一致後，才上傳四份資產到**同一個既有 Release ID**，並下載讀回核對。此路徑不建立 tag/release、不覆寫資產，也不修改 title/body/prerelease/latest 狀態。
+5. 既有四份完整資產會先下載，驗證 checksum 清單/摘要、manifest、signed/unpacked payload，以及 source ZIP 與 tag commit 相符，然後**跳過全部建置、簽署和上傳**；舊 tag 無需包含新版 helper。缺少任一資產、重名、額外衝突資產或內容不符都會中止，避免重送 Mozilla。
 
-成功時 Actions artifact `inazuma-signed-release` 及 GitHub release 會有：
+**觸發限制：** 另一個 workflow 使用 repository `GITHUB_TOKEN` 建立/發布的 Release **不會再觸發此 release workflow**。這類自動發布者須在同一 job 呼叫 signer、使用 reusable signer，或使用經適當授權的 GitHub App/PAT；本次不建立或配置任何新 token。
 
-- `release/inazuma-v0.1.0-signed.xpi`：Mozilla unlisted 簽署套件。
-- `release/inazuma-v0.1.0-unpacked.zip`：未簽署、可臨時載入的相同 payload。
-- `release/inazuma-v0.1.0-source.zip`：同一次提交給 Mozilla 的可重建原始碼。
-- `release/SHA256SUMS.txt`：上述三個檔案的摘要。
+手動重試僅接受**已發布的既有 release tag**：在 **Sign published Firefox release** 選 default branch，輸入 `tag`，或在此 repository 執行：
 
-本機不簽署的檢查：`npm test` 後執行 `npx --no-install web-ext lint --self-hosted --source-dir dist-firefox-offline --warnings-as-errors`。`python3 scripts/firefox-release.py prepare` 可在乾淨（沒有 `release/`）的 repository 產生 source/unpacked ZIP，不需憑證。
+```sh
+gh workflow run release.yml --ref main -f tag=v0.1.0
+```
+
+完整 `v0.1.0` 資產通過上述驗證時，這是只讀檢查，不會重新送 Mozilla；原有 `v0.1.0` 與 `v0.1.0-alpha.1` 的 tag/資產不會變動。缺憑證、驗證/簽署失敗或 15 分鐘內未取得簽署結果都會中止，不發布 unsigned 替代品。若 Mozilla 已接受 submission、簽署逾時或 GitHub 僅收到部分資產，先檢查 AMO submission 與保存的 Actions artifact，由維護者恢復；**不要盲目重送同版本或刪除資產來重試**。
+
+成功時 Actions artifact `inazuma-signed-release` 及原 GitHub release 會有（`<version>` 為該 tag 的實際版本）：
+
+- `inazuma-v<version>-signed.xpi`：Mozilla unlisted 簽署套件。
+- `inazuma-v<version>-unpacked.zip`：未簽署、可臨時載入的相同 payload。
+- `inazuma-v<version>-source.zip`：同一次提交給 Mozilla 的可重建原始碼。
+- `SHA256SUMS.txt`：上述三個檔案的摘要。
+
+本機不簽署的檢查：`npm test` 後執行 `npx --no-install web-ext lint --self-hosted --source-dir dist-firefox-offline --warnings-as-errors`。在精確版本 tag 的乾淨 checkout 執行 `python3 scripts/firefox-release.py prepare`，可產生 source/unpacked ZIP（需尚無 `release/`），不需憑證。
 
 **簽章不是端到端功能證明**：本地檢查 signature markers 不等於獨立驗證憑證鏈；Firefox 安裝時才執行簽章驗證。即使 Mozilla 簽署成功，也不代表 Firefox Android、Cloudflare API 或真實表單填寫已實測。
 
